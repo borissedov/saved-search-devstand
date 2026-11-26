@@ -44,7 +44,11 @@
 
     <section class="space-y-6">
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 class="mb-2 text-sm font-semibold text-slate-700">Server state <span class="font-normal text-slate-400">(GET, every second)</span></h3>
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-slate-700">Server state</h3>
+          <button id="refresh" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Refresh</button>
+        </div>
+        <p class="mb-2 text-xs text-slate-400">Refreshed after each editor request, when the tab regains focus, and on demand. No polling, so DevTools → Network shows only the editor's own traffic plus these GETs.</p>
         <pre id="state" class="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-100"></pre>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -55,10 +59,13 @@
   </main>
 
   <script>
-    // Log the editor's PATCH requests (method, status, body) next to the form.
+    // Log the editor's PATCH requests (method, status, body) next to the form,
+    // and refresh the server-state panel after every editor request.
     const realFetch = window.fetch.bind(window);
     window.fetch = async (input, init = {}) => {
-      const res = await realFetch(input, init);
+      let res;
+      try { res = await realFetch(input, init); }
+      finally { setTimeout(refresh, 0); }
       if ((init.method || 'GET') === 'PATCH') {
         const body = await res.clone().text();
         const li = document.createElement('li');
@@ -99,8 +106,10 @@
         document.getElementById('state').textContent = JSON.stringify(await r.json(), null, 2);
       } catch { document.getElementById('state').textContent = 'server not reachable'; }
     }
-    setInterval(refresh, 1000);
     refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+    document.getElementById('refresh').onclick = refresh;
 
     document.getElementById('reset').onclick = async () => {
       await realFetch('/__reset', { method: 'POST' });

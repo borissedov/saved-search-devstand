@@ -21,7 +21,7 @@ from public CDNs, so the browser needs network access.
 
 ## What you get
 - The editor, mounted as is and styled by the stand (the component itself has no classes).
-- **Server state:** the stored search, polled every second.
+- **Server state:** the stored search, refreshed after each editor request, on tab focus and on demand (no polling, so the Network tab stays readable).
 - **Requests from the editor:** every `PATCH`, with its status, request body and response.
 - **Reset data:** restores the seeded search (`version: 1`).
 
