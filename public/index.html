@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Saved search dev stand</title>
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <style type="text/tailwindcss">
+    /* The editor component ships without classes; the stand styles its plain elements. */
+    #editor form { @apply space-y-4; }
+    #editor h2 { @apply text-lg font-semibold text-slate-900; }
+    #editor fieldset { @apply grid gap-3 border-0 p-0 m-0 disabled:opacity-60; }
+    #editor label { @apply grid grid-cols-[7rem_1fr] items-center gap-3 text-sm font-medium text-slate-600; }
+    #editor input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm
+                           focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30
+                           invalid:border-rose-400 disabled:bg-slate-100; }
+    #editor fieldset > button { @apply mr-2 inline-flex w-fit items-center rounded-lg border border-slate-300 bg-white px-3 py-2
+                                       text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50; }
+    #editor fieldset > button[type=submit] { @apply border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500; }
+    #editor fieldset > :is(button):first-of-type { @apply mt-1; }
+    #editor [role=status] { @apply min-h-[1.25rem] text-sm text-emerald-700; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div>
+        <h1 class="text-base font-semibold">Saved search · dev stand</h1>
+        <p class="text-xs text-slate-500">The real <code>SavedSearchEditor.jsx</code> against the real API. Open two tabs to test conflicts.</p>
+      </div>
+      <button id="reset" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-slate-50">
+        Reset data
+      </button>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-5xl gap-6 px-4 py-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div id="editor"></div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 class="mb-2 text-sm font-semibold text-slate-700">Server state <span class="font-normal text-slate-400">(GET, every second)</span></h3>
+        <pre id="state" class="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-100"></pre>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 class="mb-2 text-sm font-semibold text-slate-700">Requests from the editor</h3>
+        <ol id="log" class="space-y-2 text-xs"></ol>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Log the editor's PATCH requests (method, status, body) next to the form.
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const res = await realFetch(input, init);
+      if ((init.method || 'GET') === 'PATCH') {
+        const body = await res.clone().text();
+        const li = document.createElement('li');
+        const ok = res.status < 300;
+        li.className = 'rounded-lg border p-2 font-mono ' + (ok ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50');
+        li.textContent = `PATCH ${res.status}  →  ${init.body}\n← ${body}`;
+        li.style.whiteSpace = 'pre-wrap';
+        document.getElementById('log').prepend(li);
+      }
+      return res;
+    };
+
+    // Minimal CommonJS loader: the client files mix ES imports (the JSX) and require().
+    const cache = {};
+    function load(name) {
+      if (name === 'react') return React;
+      const file = name.replace(/^\.\//, '').replace(/(\.jsx?)?$/, (m) => m || '.js');
+      if (cache[file]) return cache[file].exports;
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', '/src/client/' + file, false);
+      xhr.send();
+      if (xhr.status !== 200) throw new Error('cannot load ' + file);
+      const { code } = Babel.transform(xhr.responseText, {
+        filename: file, presets: ['react', ['env', { modules: 'commonjs' }]],
+      });
+      const module = { exports: {} };
+      cache[file] = module;
+      new Function('require', 'module', 'exports', code)(load, module, module.exports);
+      return module.exports;
+    }
+
+    const Editor = load('./SavedSearchEditor.jsx').default;
+    ReactDOM.createRoot(document.getElementById('editor')).render(React.createElement(Editor));
+
+    async function refresh() {
+      try {
+        const r = await realFetch('/api/saved-searches/cheap-laptops');
+        document.getElementById('state').textContent = JSON.stringify(await r.json(), null, 2);
+      } catch { document.getElementById('state').textContent = 'server not reachable'; }
+    }
+    setInterval(refresh, 1000);
+    refresh();
+
+    document.getElementById('reset').onclick = async () => {
+      await realFetch('/__reset', { method: 'POST' });
+      location.reload();
+    };
+  </script>
+</body>
+</html>
