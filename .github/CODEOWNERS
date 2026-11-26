@@ -1,0 +1,5 @@
+# Automated multi-model review. Listing @cassandra-warned-you makes GitHub
+# auto-request her on every PR, which is what triggers the review harness
+# (borissedov/gh-pr-review-harness). She only ever submits COMMENT reviews,
+# never APPROVE, so she can never satisfy an owner-review requirement.
+* @cassandra-warned-you
