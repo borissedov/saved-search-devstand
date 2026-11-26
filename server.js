@@ -1,15 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-/**
- * Dev stand for the saved-search exercise: serves the exercise's real API
- * (createApp from <repo>/src/app.js) and a page that mounts its real
- * src/client/SavedSearchEditor.jsx, compiled in the browser.
- *
- *   node server.js <path-to-exercise-repo> [port=5173]
- *
- * Nothing is copied from the exercise repo; every request reads its files live,
- * so the stand always runs the code that is checked out there.
- */
+// src/client/* is read from the exercise repo on every request; src/app.js is loaded
+// once at startup, so restart the stand (or use `node --watch`) after API changes.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,7 +16,10 @@ const port = Number(process.argv[3] || process.env.PORT || 5173);
 const { createApp } = require(path.join(repo, 'src/app.js'));
 
 const api = createApp();
-const apiHandler = api.listeners('request')[0];
+if (typeof api._store?._reset !== 'function') {
+  console.error('createApp() has no _store._reset(); the Reset button needs it.');
+  process.exit(1);
+}
 const pagePath = path.join(__dirname, 'public/index.html');
 const clientDir = path.join(repo, 'src/client');
 
@@ -38,7 +33,7 @@ http.createServer((req, res) => {
 
   if (url.pathname.startsWith('/api/')) {
     res.on('finish', () => console.log(new Date().toISOString().slice(11, 19), req.method, url.pathname, res.statusCode));
-    return apiHandler(req, res);
+    return api.emit('request', req, res); // the exercise's own listener(s), with `this` = its server
   }
   if (url.pathname === '/' || url.pathname === '/index.html') {
     return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(pagePath));

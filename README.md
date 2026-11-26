@@ -6,8 +6,9 @@ browser, talking to its **real** API (`createApp()` from `src/app.js`).
 
 It lives outside the exercise repository on purpose. The exercise rules out adding
 a build tool, and the stand compiles JSX in the browser with Babel. Nothing from
-the exercise is copied here: the stand reads the exercise's files live on every
-request.
+the exercise is copied here. Client files (`src/client/*`) are read live on every
+request. The API (`src/app.js`) is loaded once at startup, so restart the stand
+(or run it with `node --watch`) after API changes.
 
 ## Run
 

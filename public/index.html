@@ -59,22 +59,21 @@
   </main>
 
   <script>
-    // Log the editor's PATCH requests (method, status, body) next to the form,
-    // and refresh the server-state panel after every editor request.
     const realFetch = window.fetch.bind(window);
-    window.fetch = async (input, init = {}) => {
+
+    async function logPatch(requestBody, res) {
+      const li = document.createElement('li');
+      li.className = 'rounded-lg border p-2 font-mono ' + (res.ok ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50');
+      li.style.whiteSpace = 'pre-wrap';
+      li.textContent = `PATCH ${res.status}  →  ${requestBody}\n← ${await res.clone().text()}`;
+      document.getElementById('log').prepend(li);
+    }
+
+    window.fetch = async function fetchWithRequestLog(input, init = {}) {
       let res;
       try { res = await realFetch(input, init); }
-      finally { setTimeout(refresh, 0); }
-      if ((init.method || 'GET') === 'PATCH') {
-        const body = await res.clone().text();
-        const li = document.createElement('li');
-        const ok = res.status < 300;
-        li.className = 'rounded-lg border p-2 font-mono ' + (ok ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50');
-        li.textContent = `PATCH ${res.status}  →  ${init.body}\n← ${body}`;
-        li.style.whiteSpace = 'pre-wrap';
-        document.getElementById('log').prepend(li);
-      }
+      finally { setTimeout(refreshServerState, 0); }
+      if ((init.method || 'GET') === 'PATCH') await logPatch(init.body, res);
       return res;
     };
 
@@ -89,7 +88,8 @@
       xhr.send();
       if (xhr.status !== 200) throw new Error('cannot load ' + file);
       const { code } = Babel.transform(xhr.responseText, {
-        filename: file, presets: ['react', ['env', { modules: 'commonjs' }]],
+        // targets keeps async/await native (no regenerator runtime needed).
+        filename: file, presets: ['react', ['env', { modules: 'commonjs', targets: { esmodules: true } }]],
       });
       const module = { exports: {} };
       cache[file] = module;
@@ -97,19 +97,29 @@
       return module.exports;
     }
 
-    const Editor = load('./SavedSearchEditor.jsx').default;
-    ReactDOM.createRoot(document.getElementById('editor')).render(React.createElement(Editor));
-
-    async function refresh() {
-      try {
-        const r = await realFetch('/api/saved-searches/cheap-laptops');
-        document.getElementById('state').textContent = JSON.stringify(await r.json(), null, 2);
-      } catch { document.getElementById('state').textContent = 'server not reachable'; }
+    async function refreshServerState() {
+      const out = document.getElementById('state');
+      let r;
+      try { r = await realFetch('/api/saved-searches/cheap-laptops'); }
+      catch { out.textContent = 'server not reachable'; return; }
+      const text = await r.text();
+      try { out.textContent = r.ok ? JSON.stringify(JSON.parse(text), null, 2) : `GET ${r.status}\n${text}`; }
+      catch { out.textContent = `GET ${r.status} (not JSON)\n${text}`; }
     }
-    refresh();
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-    document.getElementById('refresh').onclick = refresh;
+    refreshServerState();
+    window.addEventListener('focus', refreshServerState);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshServerState(); });
+    document.getElementById('refresh').onclick = refreshServerState;
+
+    try {
+      const Editor = load('./SavedSearchEditor.jsx').default;
+      ReactDOM.createRoot(document.getElementById('editor')).render(React.createElement(Editor));
+    } catch (err) {
+      const pre = document.createElement('pre');
+      pre.className = 'whitespace-pre-wrap text-xs text-rose-700';
+      pre.textContent = 'Could not mount the editor:\n' + err.message;
+      document.getElementById('editor').replaceChildren(pre);
+    }
 
     document.getElementById('reset').onclick = async () => {
       await realFetch('/__reset', { method: 'POST' });
