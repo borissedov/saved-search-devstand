@@ -17,7 +17,7 @@ node server.js /path/to/exercise-repo        # http://localhost:5173
 node server.js /path/to/exercise-repo 8080   # another port
 ```
 
-Node 18+, no install. React 18.3.1, Babel standalone 7.24.7 and Tailwind 3.4.5 come
+Node 18+ for the stand, no install (the e2e suite needs Node 20+). React 18.3.1, Babel standalone 7.24.7 and Tailwind 3.4.5 come
 from public CDNs, so the browser needs network access.
 
 ## What you get
@@ -29,6 +29,28 @@ from public CDNs, so the browser needs network access.
 The store is in memory and shared by every tab, so two tabs on the same URL behave
 like two users editing the same search. That is how the 409 conflict flow is
 tested.
+
+## End-to-end tests
+
+`e2e/` holds a Playwright suite, numbered as in the exercise's
+`docs/e2e-scenarios.md`.
+- **Editing:** exact `PATCH` bodies for one-field edits and clears.
+- **Validation:** checks in both the form and the API.
+- **Concurrent edits:** two tabs, a 409, then *Reload latest* re-applies the pending edits.
+- **Failures:** a double submit, and an unreachable API on save and on load.
+- **API:** direct checks.
+
+Every page also fails the test on any browser console script error.
+
+```bash
+npm install && npx playwright install chromium
+EXERCISE_REPO=/path/to/exercise-repo npm run test:e2e
+```
+
+The suite needs Node 20+ and starts its own stand on port 5199. Tests share one
+in-memory store, which is reset before each test, so they run serially. Against the
+original starter, every test fails except 1.1 (the page loads) and 5.4 (unknown
+id → 404).
 
 ## How it works
 - `server.js` routes `/api/*` to the exercise's own request handler, serves
