@@ -30,6 +30,27 @@ The store is in memory and shared by every tab, so two tabs on the same URL beha
 like two users editing the same search. That is how the 409 conflict flow is
 tested.
 
+## End-to-end tests
+
+`e2e/` holds a Playwright suite: 29 tests numbered as in the exercise's
+`docs/e2e-scenarios.md`.
+- **Editing:** exact `PATCH` bodies for one-field edits and clears.
+- **Validation:** checks in both the form and the API.
+- **Concurrent edits:** two tabs, a 409, then *Reload latest* re-applies the pending edits.
+- **Failures:** a double submit, and an unreachable API on save and on load.
+- **API:** direct checks.
+
+Every page also fails the test on any browser console script error.
+
+```bash
+npm install && npx playwright install chromium
+EXERCISE_REPO=/path/to/exercise-repo npm run test:e2e
+```
+
+The suite starts its own stand on port 5199. Tests share one in-memory store and
+reset it, so they run serially. Against the fixed exercise all 29 pass. Against the
+original starter, 27 fail; only "page loads" and "unknown id → 404" pass.
+
 ## How it works
 - `server.js` routes `/api/*` to the exercise's own request handler, serves
   `public/index.html`, and serves `src/client/*.js(x)` from the exercise repo.
