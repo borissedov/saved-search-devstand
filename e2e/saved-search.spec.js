@@ -1,6 +1,6 @@
 // End-to-end scenarios for the saved-search exercise, numbered as in the exercise's
 // docs/e2e-scenarios.md. They drive the real editor in Chromium against the real API.
-const { test, expect, SEED, API, openEditor, field, status, save, serverState } = require('./fixtures');
+const { test, expect, SEED, API, openEditor, field, status, save, reloadLatest, serverState } = require('./fixtures');
 
 const editor = (page) => page.locator('#editor');
 
@@ -102,7 +102,6 @@ test.describe('3. Concurrent edits (B3)', () => {
     await openEditor(pageB);
     return pageB;
   }
-  const reload = (p) => editor(p).getByRole('button', { name: 'Reload latest' });
 
   test('3.1-3.4 a stale save gets 409, reload re-applies, nothing is lost', async ({ page, context, request }) => {
     const pageB = await twoTabs(page, context);
@@ -116,7 +115,7 @@ test.describe('3. Concurrent edits (B3)', () => {
     await expect(status(pageB)).toContainText('Someone else changed this search');
     expect(await serverState(request)).toMatchObject({ version: 2, filters: { ...SEED, category: 'Books' } });
 
-    await reload(pageB).click();
+    await reloadLatest(pageB);
     await expect(field(pageB, 'category')).toHaveValue('Books');
     await expect(field(pageB, 'priceMax')).toHaveValue('300');
 
@@ -131,9 +130,13 @@ test.describe('3. Concurrent edits (B3)', () => {
     await save(page);
     await field(pageB, 'category').fill('Toys');
     expect((await save(pageB)).status()).toBe(409);
-    await reload(pageB).click();
-    await expect(field(pageB, 'category')).toHaveValue('Toys');
     expect((await serverState(request)).filters.category).toBe('Books');
+    await reloadLatest(pageB);
+    await expect(field(pageB, 'category')).toHaveValue('Toys');
+    expect((await serverState(request)).filters.category).toBe('Books'); // reload alone saves nothing
+    const res = await save(pageB);
+    expect(res.request().postDataJSON()).toEqual({ expectedVersion: 2, filters: { category: 'Toys' } });
+    expect((await serverState(request)).filters.category).toBe('Toys');
   });
 
   test('3.6 an edit and a clear from two tabs both survive', async ({ page, context, request }) => {
@@ -142,7 +145,8 @@ test.describe('3. Concurrent edits (B3)', () => {
     await save(page);
     await editor(pageB).getByRole('button', { name: 'Clear price cap' }).click();
     expect((await save(pageB)).status()).toBe(409);
-    await reload(pageB).click();
+    await reloadLatest(pageB);
+    await expect(field(pageB, 'query')).toHaveValue('gaming laptops');
     expect((await save(pageB)).status()).toBe(200);
     const { priceMax, ...rest } = SEED;
     expect((await serverState(request)).filters).toEqual({ ...rest, query: 'gaming laptops' });
@@ -153,7 +157,15 @@ test.describe('4. Double actions and failures', () => {
   test('4.1 a double-click on Save sends one request', async ({ page }) => {
     await openEditor(page);
     await field(page, 'dateTo').fill('2026-06-25');
+    // Hold the first PATCH open so the second click lands while it is in flight.
+    let release;
+    const held = new Promise((r) => { release = r; });
+    await page.route('**/api/**', async (route) => {
+      if (route.request().method() === 'PATCH') await held;
+      await route.continue();
+    });
     await editor(page).getByRole('button', { name: 'Save' }).dblclick();
+    release();
     await expect(status(page)).toHaveText('Saved.');
     expect(page.patches).toHaveLength(1);
   });
@@ -179,7 +191,6 @@ test.describe('5. API directly', () => {
   const patch = (request, data) => request.patch(API, { data });
 
   test('5.1 the same expectedVersion twice: 200 then 409', async ({ request }) => {
-    await request.post('/__reset');
     expect((await patch(request, { expectedVersion: 1, filters: { category: 'Books' } })).status()).toBe(200);
     const second = await patch(request, { expectedVersion: 1, filters: { priceMax: 300 } });
     expect(second.status()).toBe(409);
@@ -188,10 +199,10 @@ test.describe('5. API directly', () => {
 
   test('5.2 missing expectedVersion: 400', async ({ request }) => {
     expect((await patch(request, { filters: { category: 'Books' } })).status()).toBe(400);
+    expect(await serverState(request)).toMatchObject({ version: 1, filters: SEED });
   });
 
   test('5.3 a __proto__ key: 400 and the server keeps answering', async ({ request }) => {
-    await request.post('/__reset');
     const res = await request.patch(API, {
       headers: { 'Content-Type': 'application/json' },
       data: '{"expectedVersion":1,"filters":{"__proto__":{"x":1}}}',
@@ -207,7 +218,6 @@ test.describe('5. API directly', () => {
 
   for (const filters of [{ priceMax: 'abc' }, { priceMax: -5 }, { priceMax: '0x10' }, { priceMax: '1e3' }, { dateTo: '2026-02-30' }, { dateTo: '2026-6-5' }]) {
     test(`5.5 invalid ${JSON.stringify(filters)}: 400, nothing applied`, async ({ request }) => {
-      await request.post('/__reset');
       expect((await patch(request, { expectedVersion: 1, filters })).status()).toBe(400);
       expect(await serverState(request)).toMatchObject({ version: 1, filters: SEED });
     });
